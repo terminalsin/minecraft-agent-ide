@@ -1,0 +1,28 @@
+# Minecraft Agent IDE — plugin configuration.
+
+linker:
+  # Address of the desktop linker's WebSocket bridge.
+  host: "127.0.0.1"
+  port: 8765
+  # Shared secret; must match the linker's authToken. Leave empty for an open bridge.
+  token: ""
+  # Seconds between reconnect attempts if the linker is unreachable.
+  reconnect-seconds: 5
+
+display:
+  # Show a floating text hologram above each agent villager with its live output.
+  hologram: true
+  # Also show the agent's "thinking" (thought chunks). Off by default to reduce noise.
+  show-thoughts: false
+  # Max characters kept in the hologram before older text scrolls off.
+  hologram-max-chars: 300
+  # Height (blocks) of the hologram above the villager's feet.
+  hologram-height: 2.4
+
+agent:
+  # Default agent profile id (must exist in the linker config). Empty = linker default.
+  default-profile: ""
+  # Optional per-villager workspace directory sent to the linker. Empty = linker default.
+  workspace: ""
+  # How close (blocks) a player must be for /agent talk and /agent remove to find a villager.
+  talk-radius: 6.0

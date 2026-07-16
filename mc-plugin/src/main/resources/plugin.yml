@@ -1,0 +1,22 @@
+name: MinecraftAgentIDE
+version: '${version}'
+main: dev.ghast.mcagent.AgentIdePlugin
+api-version: '1.21'
+authors: [ghast]
+description: Orchestrate ACP AI coding agents (Claude Code, Codex, ...) through villager NPCs.
+website: https://github.com/terminalsin/minecraft-agent-ide
+commands:
+  agent:
+    description: Spawn and control agent villagers.
+    usage: |
+      /agent spawn [profile]  - spawn an agent villager you can talk to
+      /agent talk             - start talking to the nearest agent villager
+      /agent stop             - stop talking / cancel the current turn
+      /agent list             - list active agent villagers
+      /agent remove           - remove the nearest agent villager
+      /agent status           - show linker connection status
+    permission: mcagent.use
+permissions:
+  mcagent.use:
+    description: Allows spawning and controlling agent villagers.
+    default: op
