@@ -30,6 +30,12 @@ public final class JsonRpcPeer implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(JsonRpcPeer.class);
 
+    /** When set (via {@code -Dacp.trace=true} or {@code ACP_TRACE=1}), every raw line is logged. */
+    private static final boolean TRACE =
+            Boolean.parseBoolean(System.getProperty("acp.trace", "false"))
+                    || "1".equals(System.getenv("ACP_TRACE"))
+                    || "true".equalsIgnoreCase(System.getenv("ACP_TRACE"));
+
     private final BufferedReader reader;
     private final BufferedWriter writer;
     private final AtomicLong nextId = new AtomicLong(1);
@@ -114,6 +120,9 @@ public final class JsonRpcPeer implements AutoCloseable {
                 line = line.trim();
                 if (line.isEmpty()) {
                     continue;
+                }
+                if (TRACE) {
+                    log.info("<-- {}", line);
                 }
                 try {
                     dispatch(Json.MAPPER.readTree(line));
@@ -210,7 +219,10 @@ public final class JsonRpcPeer implements AutoCloseable {
         if (cause instanceof JsonRpcException rpc) {
             sendError(id, rpc.code(), rpc.getMessage());
         } else {
-            sendError(id, -32603, "Internal error: " + cause.getMessage());
+            // Log the full stack: the agent only receives a terse message, so without this an
+            // internal failure in one of our request handlers would vanish.
+            log.warn("Request handler failed, replying with internal error", cause);
+            sendError(id, -32603, "Internal error: " + cause);
         }
     }
 
@@ -226,6 +238,9 @@ public final class JsonRpcPeer implements AutoCloseable {
 
     private void writeMessage(ObjectNode message) throws IOException {
         String json = Json.MAPPER.writeValueAsString(message);
+        if (TRACE) {
+            log.info("--> {}", json);
+        }
         synchronized (writeLock) {
             writer.write(json);
             writer.write('\n');

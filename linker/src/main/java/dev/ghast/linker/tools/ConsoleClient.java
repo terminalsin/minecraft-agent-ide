@@ -106,7 +106,7 @@ public final class ConsoleClient {
                 System.out.println("[linker " + welcome.linkerVersion() + " agents="
                         + welcome.agents().stream().map(BridgeMessage.AgentProfileInfo::id).toList() + "]");
                 client.send(BridgeCodec.INSTANCE.encode(
-                        new BridgeMessage.CreateSession("console", profile, null)));
+                        new BridgeMessage.CreateSession("console", profile, null, null)));
                 System.out.println("[starting agent" + (profile != null ? " '" + profile + "'" : "") + "…]");
             }
             case BridgeMessage.SessionCreated created -> {
@@ -121,8 +121,13 @@ public final class ConsoleClient {
                     System.out.println("\n  (thinking: " + oneLine(msg.text()) + ")");
                 }
             }
-            case BridgeMessage.ToolCall tool ->
-                    System.out.println("\n  [tool] " + tool.title() + " (" + tool.status() + ")");
+            case BridgeMessage.ToolCall tool -> {
+                String label = tool.title() != null ? tool.title()
+                        : tool.toolName() != null ? tool.toolName()
+                        : tool.kind() != null ? tool.kind() : "tool";
+                String extra = tool.detail() != null && tool.title() == null ? " " + tool.detail() : "";
+                System.out.println("\n  [tool] " + label + extra + " (" + tool.status() + ")");
+            }
             case BridgeMessage.Plan plan -> {
                 System.out.println("\n  [plan]");
                 for (BridgeMessage.PlanItem item : plan.entries()) {

@@ -36,6 +36,12 @@ public final class AgentSession implements ClientSideHandler {
     private final Path cwd;
     private final Consumer<BridgeMessage> toPlugin;
     private final Map<String, CompletableFuture<String>> pendingPermissions = new ConcurrentHashMap<>();
+    // Merged view of each tool call: ACP tool_call_update notifications omit title/kind/name, so we
+    // remember the initial tool_call and fill the gaps on every subsequent status change.
+    private final Map<String, ToolCallState> toolCalls = new ConcurrentHashMap<>();
+
+    private record ToolCallState(String title, String kind, String toolName, String detail, String status) {
+    }
 
     private volatile AgentConnection connection;
     private volatile String sessionId;
@@ -110,8 +116,7 @@ public final class AgentSession implements ClientSideHandler {
             case "agent_message_chunk" -> emitMessage("assistant", update.text());
             case "agent_thought_chunk" -> emitMessage("thought", update.text());
             case "user_message_chunk" -> emitMessage("user", update.text());
-            case "tool_call", "tool_call_update" -> toPlugin.accept(new BridgeMessage.ToolCall(
-                    sessionId, update.toolCallId(), update.toolTitle(), update.toolKind(), update.toolStatus()));
+            case "tool_call", "tool_call_update" -> forwardToolCall(update);
             case "plan" -> toPlugin.accept(new BridgeMessage.Plan(sessionId, mapPlan(update.plan())));
             default -> log.debug("Unhandled session update kind: {}", update.kind());
         }
@@ -121,6 +126,28 @@ public final class AgentSession implements ClientSideHandler {
         if (text != null && !text.isEmpty()) {
             toPlugin.accept(new BridgeMessage.Message(sessionId, role, text));
         }
+    }
+
+    /** Merges a tool_call / tool_call_update onto any prior state for the same id, then forwards it. */
+    private void forwardToolCall(SessionUpdate update) {
+        String id = update.toolCallId();
+        ToolCallState prev = id == null ? null : toolCalls.get(id);
+        String title = firstNonBlank(update.toolTitle(), prev == null ? null : prev.title());
+        String kind = firstNonBlank(update.toolKind(), prev == null ? null : prev.kind());
+        String name = firstNonBlank(update.toolName(), prev == null ? null : prev.toolName());
+        String detail = firstNonBlank(update.toolDetail(), prev == null ? null : prev.detail());
+        String status = firstNonBlank(update.toolStatus(), prev == null ? null : prev.status());
+        if (id != null) {
+            toolCalls.put(id, new ToolCallState(title, kind, name, detail, status));
+        }
+        toPlugin.accept(new BridgeMessage.ToolCall(sessionId, id, title, kind, status, name, detail));
+    }
+
+    private static String firstNonBlank(String a, String b) {
+        if (a != null && !a.isBlank()) {
+            return a;
+        }
+        return b != null && !b.isBlank() ? b : null;
     }
 
     private static List<BridgeMessage.PlanItem> mapPlan(List<PlanEntry> entries) {

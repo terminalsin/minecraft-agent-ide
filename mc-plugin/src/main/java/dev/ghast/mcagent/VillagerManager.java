@@ -7,12 +7,15 @@ import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.entity.Villager;
+import org.bukkit.persistence.PersistentDataContainer;
 import org.bukkit.persistence.PersistentDataType;
 import org.bukkit.plugin.Plugin;
 import org.bukkit.util.Vector;
 
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -26,6 +29,10 @@ public final class VillagerManager {
     private final Plugin plugin;
     private final NamespacedKey agentKey;
     private final NamespacedKey hologramKey;
+    // Metadata persisted on the villager entity so its agent binding survives a server restart.
+    private final NamespacedKey profileKey;
+    private final NamespacedKey sessionKey;
+    private final NamespacedKey nameKey;
 
     private final Map<String, AgentVillager> byVillagerId = new ConcurrentHashMap<>();
     private final Map<String, AgentVillager> bySessionId = new ConcurrentHashMap<>();
@@ -34,6 +41,9 @@ public final class VillagerManager {
         this.plugin = plugin;
         this.agentKey = agentKey;
         this.hologramKey = hologramKey;
+        this.profileKey = new NamespacedKey(plugin, "agent-profile");
+        this.sessionKey = new NamespacedKey(plugin, "agent-session");
+        this.nameKey = new NamespacedKey(plugin, "agent-name");
     }
 
     public NamespacedKey agentKey() {
@@ -48,12 +58,84 @@ public final class VillagerManager {
             v.setSilent(true);
             v.setPersistent(true);
             v.setRemoveWhenFarAway(false);
-            v.getPersistentDataContainer().set(agentKey, PersistentDataType.BYTE, (byte) 1);
+            PersistentDataContainer pdc = v.getPersistentDataContainer();
+            pdc.set(agentKey, PersistentDataType.BYTE, (byte) 1);
+            if (profileId != null) {
+                pdc.set(profileKey, PersistentDataType.STRING, profileId);
+            }
         });
 
         AgentVillager agent = new AgentVillager(villager.getUniqueId(), profileId);
         byVillagerId.put(agent.villagerId(), agent);
         return agent;
+    }
+
+    /** Writes the agent's session binding onto the villager entity so it survives a restart. */
+    public void persistMeta(AgentVillager agent) {
+        entityOf(agent).ifPresent(v -> {
+            PersistentDataContainer pdc = v.getPersistentDataContainer();
+            setOrClear(pdc, profileKey, agent.profileId());
+            setOrClear(pdc, sessionKey, agent.sessionId());
+            setOrClear(pdc, nameKey, agent.agentNameRaw());
+        });
+    }
+
+    private static void setOrClear(PersistentDataContainer pdc, NamespacedKey key, String value) {
+        if (value == null || value.isBlank()) {
+            pdc.remove(key);
+        } else {
+            pdc.set(key, PersistentDataType.STRING, value);
+        }
+    }
+
+    /**
+     * Rebuilds runtime state for agent villagers left in loaded worlds by a previous run and marks
+     * them for session reattachment. Returns the restored agents.
+     */
+    public java.util.List<AgentVillager> restoreFromWorld() {
+        java.util.List<AgentVillager> restored = new java.util.ArrayList<>();
+        for (var world : plugin.getServer().getWorlds()) {
+            for (Entity entity : world.getEntities()) {
+                if (entity.getType() != EntityType.VILLAGER
+                        || !entity.getPersistentDataContainer().has(agentKey, PersistentDataType.BYTE)
+                        || byVillagerId.containsKey(entity.getUniqueId().toString())) {
+                    continue;
+                }
+                PersistentDataContainer pdc = entity.getPersistentDataContainer();
+                String profile = pdc.get(profileKey, PersistentDataType.STRING);
+                AgentVillager agent = new AgentVillager(entity.getUniqueId(), profile);
+                String priorSession = pdc.get(sessionKey, PersistentDataType.STRING);
+                String priorName = pdc.get(nameKey, PersistentDataType.STRING);
+                if (priorSession != null) {
+                    agent.setSessionId(priorSession);
+                }
+                if (priorName != null) {
+                    agent.setAgentName(priorName);
+                }
+                agent.setState(AgentVillager.State.OFFLINE);
+                agent.setNeedsResume(true);
+                byVillagerId.put(agent.villagerId(), agent);
+                restored.add(agent);
+            }
+        }
+        return restored;
+    }
+
+    /** Teleports the villager (and its hologram, if any) to {@code location}. */
+    public boolean moveTo(AgentVillager agent, Location location) {
+        Optional<Villager> villager = entityOf(agent);
+        if (villager.isEmpty()) {
+            return false;
+        }
+        villager.get().teleport(location);
+        UUID hologram = agent.hologramId();
+        if (hologram != null) {
+            Entity entity = plugin.getServer().getEntity(hologram);
+            if (entity != null) {
+                entity.teleport(location.clone().add(0, 2.4, 0));
+            }
+        }
+        return true;
     }
 
     public void indexSession(AgentVillager agent) {
@@ -143,13 +225,23 @@ public final class VillagerManager {
      * state does not survive a restart, so these entities would otherwise be inert.
      */
     public int sweepOrphans() {
+        // Holograms currently owned by a tracked agent must survive the sweep.
+        Set<UUID> ownedHolograms = new HashSet<>();
+        for (AgentVillager agent : byVillagerId.values()) {
+            if (agent.hologramId() != null) {
+                ownedHolograms.add(agent.hologramId());
+            }
+        }
         int removed = 0;
         for (var world : plugin.getServer().getWorlds()) {
             for (Entity entity : world.getEntities()) {
+                PersistentDataContainer pdc = entity.getPersistentDataContainer();
                 boolean isAgent = entity.getType() == EntityType.VILLAGER
-                        && entity.getPersistentDataContainer().has(agentKey, PersistentDataType.BYTE);
-                boolean isHologram = entity.getPersistentDataContainer().has(hologramKey, PersistentDataType.BYTE);
-                if ((isAgent || isHologram) && !byVillagerId.containsKey(entity.getUniqueId().toString())) {
+                        && pdc.has(agentKey, PersistentDataType.BYTE);
+                boolean isHologram = pdc.has(hologramKey, PersistentDataType.BYTE);
+                boolean orphanAgent = isAgent && !byVillagerId.containsKey(entity.getUniqueId().toString());
+                boolean orphanHologram = isHologram && !ownedHolograms.contains(entity.getUniqueId());
+                if (orphanAgent || orphanHologram) {
                     entity.remove();
                     removed++;
                 }

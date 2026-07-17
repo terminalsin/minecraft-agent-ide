@@ -1,183 +1,176 @@
-# Minecraft Agent IDE
+<p align="center">
+  <img src="assets/header.png" alt="Minecraft Agent IDE" width="100%">
+</p>
 
-Control an AI coding agent — **Claude Code**, **Codex**, or any other agent that speaks the
-[Agent Client Protocol (ACP)](https://agentclientprotocol.com) — from inside Minecraft by talking to
-villager NPCs.
+<h1 align="center">Minecraft Agent IDE</h1>
 
-Right‑click a villager, type in chat, and the message is sent to a real coding agent running on your
-desktop against a real workspace. The agent's replies stream back above the villager's head and into
-chat; its tool calls, plans, and permission prompts show up as clickable messages you answer in game.
+<p align="center">
+  <b>Chat with a villager in Minecraft — and a real AI coding assistant does the work.</b><br>
+  Right-click a villager, type what you want, and watch it build, edit, and answer in real time.
+</p>
+
+<p align="center">
+  <img alt="Minecraft: Paper 1.21+" src="https://img.shields.io/badge/Minecraft-Paper%201.21%2B-66ab3e">
+  <img alt="Java 21" src="https://img.shields.io/badge/Java-21-e76f00">
+  <img alt="AI: Claude & Codex" src="https://img.shields.io/badge/AI-Claude%20%26%20Codex-7c4dff">
+  <img alt="Release" src="https://img.shields.io/badge/release-v0.2.0-1e7f74">
+</p>
+
+---
+
+## 🧩 What is this?
+
+Imagine walking up to a character in Minecraft, telling it *“add a login page to my website,”* and it **actually does it** — on your real computer — while its progress floats above its head.
+
+That’s this project.
+
+**Minecraft Agent IDE** turns an ordinary Minecraft villager into a friendly face for a powerful **AI coding assistant** (like Anthropic’s **Claude Code** or OpenAI’s **Codex**). You chat with the villager in normal Minecraft chat; the AI reads and writes real files in a project folder on your computer and reports back — right there in the game.
+
+No command line. No code editor. Just a villager and a chat box.
+
+## ✨ What you can do
+
+- 🗨️ **Ask in plain English** — *“fix the bug in my app,” “explain this file,” “add dark mode.”*
+- 👀 **Watch it work** — a little panel above the villager shows what it’s doing: reading files, running commands, its to‑do plan.
+- ✅ **Stay in control** — when the AI wants to run something, you get clickable **[Allow]** / **[Reject]** buttons in chat.
+- 🤖 **Bring your own AI** — Claude Code, Codex, or any assistant that speaks the open *Agent Client Protocol*.
+- 🧑‍🤝‍🧑 **Many helpers at once** — spawn several villagers, each on its own task.
+
+## 🎬 How it works
+
+There are two small programs. You don’t need to understand them — just know there are two:
+
+1. **The Minecraft plugin** — lives on your Minecraft server. It only knows about villagers and chat.
+2. **The linker** — a small app on the computer where your project lives. It’s the bridge that runs the AI and lets it touch your files.
 
 ```
- ┌────────────────────┐        WebSocket          ┌───────────────────────┐   JSON-RPC / stdio   ┌──────────────────┐
- │  Minecraft (Paper) │  ───  bridge protocol ──▶ │   Desktop Linker      │ ─── ACP (NDJSON) ──▶ │   ACP Agent      │
- │  villager NPCs     │ ◀──  (plugin ⇄ linker) ── │  (ACP client + bridge)│ ◀─────────────────── │  Claude Code /   │
- │  mc-plugin         │                           │   linker              │                      │  Codex / …       │
- └────────────────────┘                           └───────────────────────┘                      └──────────────────┘
+   You  ➜  🧑 Villager (Minecraft)  ➜  🔗 Linker (your computer)  ➜  🤖 AI agent  ➜  📁 your project
+                           ⬅  replies, live progress, questions  ⬅
 ```
 
-## Why two processes?
+Your code never touches the Minecraft server — everything happens safely on **your own computer**.
 
-Minecraft servers are often not on the same machine as your code, and agents need real filesystem and
-process access. So the system is split:
+## 🚀 Get started
 
-- **`mc-plugin`** — a Paper plugin. Knows only about villagers, chat and buttons. Talks to the linker
-  over a small WebSocket JSON protocol. Bundles nothing agent-specific.
-- **`linker`** — a small desktop app that runs where your *workspace* lives. It is the ACP **client**:
-  it launches the agent as a subprocess, speaks ACP over its stdio, and translates ACP activity into
-  the bridge protocol for the plugin (and answers the agent's filesystem/permission requests).
+First grab a few free things: **Java 21**, a **Paper Minecraft server (1.21+)**, **Node.js**, and an account for your AI (a **Claude** or **OpenAI** login). Then:
 
-Everything the agent does happens on the desktop running the linker, against the working directory you
-configure — the Minecraft server never touches your code.
+### 1. Download
+From the **[latest release](../../releases/latest)**, download the two files:
+- `MinecraftAgentIDE-<version>.jar` — the Minecraft plugin
+- `minecraft-agent-linker-<version>.jar` — the linker
 
-## Modules
+*(Prefer to build it yourself? See [For developers](#️-for-developers).)*
 
-| Module            | What it is                                                                              |
-|-------------------|-----------------------------------------------------------------------------------------|
-| `acp-core`        | A dependency-light Java implementation of ACP: a bidirectional JSON-RPC/NDJSON peer plus a typed `AgentConnection` (initialize, `session/new`, `session/prompt`, `session/update`, `session/request_permission`, `fs/*`). |
-| `bridge-protocol` | The JSON message contract between the plugin and the linker (`BridgeMessage`, `BridgeCodec`). |
-| `linker`          | Desktop app: WebSocket bridge server + `SessionManager` that launches one ACP agent per villager and maps ACP ⇄ bridge. Optional Swing status window. |
-| `mc-plugin`       | The Paper plugin: villager NPCs, chat capture, hologram rendering, clickable permission buttons, `/agent` command. |
+### 2. Start the linker (on your computer)
+```bash
+java -jar minecraft-agent-linker-<version>.jar
+```
+The first run creates a `linker.json` file next to it. Open it and set **one** thing:
+`defaultCwd` — the folder you want the AI to work in.
 
-## Requirements
+### 3. Add the plugin (to your server)
+Drop `MinecraftAgentIDE-<version>.jar` into your server’s `plugins/` folder and restart it.
 
-- **Java 21** (Paper 1.21 and the linker both need it).
-- A **Paper** server, 1.21+.
-- **Node.js** on the linker machine (the default agents run via `npx`).
-- Credentials for whichever agent you use (e.g. an Anthropic or OpenAI login / API key in the linker's
-  environment — the same ones the agent CLI expects).
+### 4. Play 🎉
+- Join the server and type `/agent spawn`.
+- A villager appears — type in chat to talk to it.
+- Ask it to do something. That’s it!
 
-## Build
+## 🕹️ In‑game commands
 
+| Command | What it does |
+| --- | --- |
+| `/agent spawn [ai]` | Spawn a helper villager and start chatting |
+| `/agent talk` | Talk to the nearest villager |
+| `/agent stop` | Stop / cancel the current task |
+| `/agent list` | List your helper villagers |
+| `/agent remove` | Remove the nearest villager |
+| `/agent status` | Check the connection to the linker |
+| `/agent debug` | Fix‑it tools: move, rebuild, reconnect, or clean up stuck villagers |
+
+💡 You can also just **right‑click** a villager to start talking.
+
+## ❓ FAQ
+
+**Do I need to know how to code?**
+No — to *use* it, you just chat. The AI does the coding.
+
+**Is my code uploaded to the Minecraft server?**
+No. The AI runs on your own computer; the server only ever sees chat messages.
+
+**Which AIs work?**
+Claude Code and Codex out of the box — plus any *ACP* agent with a small config tweak.
+
+**Does it cost money?**
+This project is free and open‑source. Your AI account (Claude / OpenAI) has its own pricing.
+
+## 🛠️ For developers
+
+<details>
+<summary><b>Build from source, architecture, and internals</b></summary>
+
+<br>
+
+### Build
 ```bash
 ./gradlew build
 ```
-
 Outputs:
+- Plugin: `mc-plugin/build/libs/MinecraftAgentIDE-<version>.jar`
+- Linker: `linker/build/libs/minecraft-agent-linker-<version>.jar`
 
-- Linker fat jar: `linker/build/libs/minecraft-agent-linker-<version>.jar`
-- Plugin jar:     `mc-plugin/build/libs/MinecraftAgentIDE-<version>.jar`
+> The plugin compiles against `paper-api` from the PaperMC Maven repo (`https://repo.papermc.io`), so that host must be reachable when you build `mc-plugin`.
 
-> The plugin compiles against `paper-api` from the PaperMC Maven repo
-> (`https://repo.papermc.io`), so that host must be reachable when you build `mc-plugin`.
+### Modules
+| Module | What it is |
+| --- | --- |
+| `acp-core` | A dependency‑light Java implementation of the **Agent Client Protocol (ACP)**: a bidirectional JSON‑RPC/NDJSON peer plus a typed `AgentConnection` (`initialize`, `session/new`, `session/load`, `session/prompt`, `session/update`, `session/request_permission`, `fs/*`). |
+| `bridge-protocol` | The JSON message contract between the plugin and the linker (`BridgeMessage`, `BridgeCodec`). |
+| `linker` | Desktop app: WebSocket bridge server + `SessionManager` that launches one ACP agent per villager, maps ACP ⇄ bridge, and persists sessions so they can be resumed. |
+| `mc-plugin` | The Paper plugin: villager NPCs, chat capture, floating status panels, clickable permission buttons, `/agent` command. |
 
-## Run
+### How the pieces talk
+```
+ ┌────────────────────┐      WebSocket        ┌───────────────────────┐   JSON-RPC / stdio   ┌──────────────────┐
+ │  Minecraft (Paper) │ ─ bridge protocol ─▶  │   Desktop Linker      │ ─── ACP (NDJSON) ──▶ │   ACP Agent      │
+ │  villager NPCs     │ ◀─ (plugin ⇄ linker)  │  (ACP client + bridge)│ ◀─────────────────── │  Claude Code /   │
+ │  mc-plugin         │                       │   linker              │                      │  Codex / …       │
+ └────────────────────┘                       └───────────────────────┘                      └──────────────────┘
+```
 
-### 1. Start the linker (on your workstation)
+### Configure the linker
+On first run the linker writes `linker.json` and listens on `127.0.0.1:8765`. Agent commands and the default workspace are auto‑resolved from your installation; the main thing to set is `defaultCwd`. Any ACP agent works — add a profile with the right `command` (e.g. `["npx","-y","@zed-industries/claude-code-acp"]`, `gemini --experimental-acp`, a local `codex-acp` binary, …).
 
+The plugin reads `plugins/MinecraftAgentIDE/config.yml` — point `linker.host`/`linker.port` at the linker (and set a shared `token` if the linker uses one).
+
+### Requirements
+- **Java 21** (Paper 1.21 and the linker both need it).
+- A **Paper** server, 1.21+.
+- **Node.js** on the linker machine (the default agents run via `npx`).
+- Credentials for whichever agent you use (an Anthropic or OpenAI login / API key in the linker’s environment).
+
+### Test the AI end‑to‑end without Minecraft
+The linker jar ships a terminal REPL that stands in for the plugin:
 ```bash
-java -jar linker/build/libs/minecraft-agent-linker-<version>.jar [path/to/linker.json]
-```
-
-On first run it writes a `linker.json` next to itself and starts listening on `127.0.0.1:8765`. Edit
-it to set your workspace and pick agents:
-
-```jsonc
-{
-  "host": "127.0.0.1",
-  "port": 8765,
-  "authToken": null,               // set a shared secret to require ?token= on connect
-  "defaultProfile": "claude-code",
-  "defaultCwd": "/path/to/your/project",
-  "ui": true,                       // Swing status window (ignored when headless)
-  "agents": [
-    {
-      "id": "claude-code",
-      "displayName": "Claude Code",
-      "description": "Anthropic Claude Code, wrapped for ACP",
-      "command": ["npx", "-y", "@zed-industries/claude-code-acp"],
-      "cwd": null, "env": {}, "authMethod": null
-    },
-    {
-      "id": "codex",
-      "displayName": "Codex",
-      "description": "OpenAI Codex, wrapped for ACP",
-      "command": ["npx", "-y", "@zed-industries/codex-acp"],
-      "cwd": null, "env": {}, "authMethod": null
-    }
-  ]
-}
-```
-
-Any ACP agent works — just add a profile with the right `command`. Examples:
-`gemini --experimental-acp`, a locally built `codex-acp` binary, etc.
-
-### 2. Install the plugin (on the Paper server)
-
-Drop `MinecraftAgentIDE-<version>.jar` into `plugins/`, start the server once to generate
-`plugins/MinecraftAgentIDE/config.yml`, then point it at the linker:
-
-```yaml
-linker:
-  host: "127.0.0.1"   # the linker's address, reachable from the server
-  port: 8765
-  token: ""           # must match linker authToken if set
-```
-
-If the server and workstation are different machines, set `host` accordingly (and consider setting a
-`token`).
-
-## Use it in game
-
-| Command                 | Effect                                                    |
-|-------------------------|-----------------------------------------------------------|
-| `/agent spawn [profile]`| Spawn an agent villager in front of you and start a session (profile optional). |
-| `/agent talk`           | Start talking to the nearest agent villager.              |
-| `/agent stop`           | Leave the conversation / cancel the current turn.         |
-| `/agent list`           | List active agent villagers and their state.              |
-| `/agent remove`         | Remove the nearest agent villager and end its session.    |
-| `/agent status`         | Show linker connection status and available agents.       |
-
-While you're talking to a villager, everything you type in chat is sent to its agent instead of being
-broadcast. Responses stream above the villager's head; the full turn is printed to chat when it
-finishes. When the agent asks to run a tool, you get an in‑chat prompt with clickable
-**[Allow]** / **[Reject]** buttons.
-
-Right‑clicking a villager also starts a conversation (no trade menu).
-
-## How the ACP integration works
-
-`acp-core` implements the client half of ACP:
-
-1. **`initialize`** — advertises client capabilities (filesystem read/write) and negotiates the
-   protocol version (currently `1`).
-2. **`session/new`** — opens a session rooted at the configured workspace directory.
-3. **`session/prompt`** — sends the player's chat as a text content block; the returned `stopReason`
-   ends the turn.
-4. **`session/update`** notifications stream back `agent_message_chunk`, `agent_thought_chunk`,
-   `tool_call` / `tool_call_update`, and `plan` updates, which the linker normalizes and forwards.
-5. **`session/request_permission`** is surfaced to the player as clickable buttons; the chosen option
-   is returned to the agent.
-6. **`fs/read_text_file`** / **`fs/write_text_file`** are served by the linker against the real
-   workspace, so agents that delegate file I/O to the client work too.
-
-See `acp-core/src/main/java/dev/ghast/acp/` — `AgentConnection` is the entry point and
-`rpc/JsonRpcPeer` is the transport.
-
-## Manual testing without Minecraft
-
-The linker jar ships a terminal REPL that stands in for the plugin, so you can verify the linker and a
-real agent end-to-end before touching a Minecraft server. With a linker running:
-
-```bash
-java -cp linker/build/libs/minecraft-agent-linker-<version>.jar \
+java -cp minecraft-agent-linker-<version>.jar \
      dev.ghast.linker.tools.ConsoleClient ws://127.0.0.1:8765 claude-code
 ```
+Type a message to prompt the agent; output, tool calls, plans and permission prompts print inline (`/cancel`, `/allow`, `/deny`, `/quit`). Set `ACP_TRACE=1` to log the raw ACP traffic.
 
-Type a message to prompt the agent; agent output, tool calls, plans and permission prompts print
-inline. Commands: `/cancel`, `/allow`, `/deny`, `/quit`. This drives the exact same bridge protocol
-the plugin uses, so if it works here, the ACP side is good.
-
-There are also fast unit tests for the protocol layers:
-
+Fast unit tests for the protocol layers:
 ```bash
 ./gradlew test
 ```
 
-## References
+### References
+- Agent Client Protocol — https://agentclientprotocol.com
+- ACP spec — https://github.com/agentclientprotocol/agent-client-protocol
+- Claude Code ACP adapter — https://www.npmjs.com/package/@zed-industries/claude-code-acp
+- Codex ACP adapter — https://github.com/zed-industries/codex-acp
+- Paper API — https://docs.papermc.io/paper/dev
 
-- Agent Client Protocol — <https://agentclientprotocol.com>
-- ACP spec repo — <https://github.com/agentclientprotocol/agent-client-protocol>
-- Claude Code ACP adapter — <https://www.npmjs.com/package/@zed-industries/claude-code-acp>
-- Codex ACP adapter — <https://github.com/zed-industries/codex-acp>
-- Paper API — <https://docs.papermc.io/paper/dev>
+</details>
+
+---
+
+<p align="center"><sub>Built for fun. Your world, your code, your AI.</sub></p>

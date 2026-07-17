@@ -24,6 +24,11 @@ public final class LinkerMain {
         Path configPath = Path.of(args.length > 0 ? args[0] : "linker.json");
         LinkerConfig config = ConfigLoader.load(configPath);
 
+        // Persist villager→session bindings next to the config so sessions survive a restart.
+        Path parent = configPath.toAbsolutePath().getParent();
+        Path storePath = (parent != null ? parent : Path.of(".")).resolve("sessions.json");
+        SessionStore store = new SessionStore(storePath);
+
         BridgeServer server = new BridgeServer(config.host(), config.port(), config.authToken());
 
         boolean headless = GraphicsEnvironment.isHeadless() || !config.ui();
@@ -42,7 +47,7 @@ public final class LinkerMain {
             }
         };
 
-        SessionManager manager = new SessionManager(config, server::broadcast, refresh);
+        SessionManager manager = new SessionManager(config, server::broadcast, refresh, store);
         holder[0] = manager;
         server.setHandler(manager::handle);
         server.setOnConnectionsChanged(refresh);

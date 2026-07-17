@@ -9,7 +9,6 @@ import net.kyori.adventure.text.event.HoverEvent;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import org.bukkit.entity.Villager;
-import org.bukkit.plugin.Plugin;
 
 import java.util.List;
 import java.util.Map;
@@ -22,7 +21,7 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 public final class BridgeDispatcher {
 
-    private final Plugin plugin;
+    private final AgentIdePlugin plugin;
     private final VillagerManager villagers;
     private final DisplayRenderer renderer;
     private final boolean showThoughts;
@@ -32,7 +31,7 @@ public final class BridgeDispatcher {
     // requestId -> sessionId, so the /agent perm command knows which session to answer.
     private final Map<String, String> pendingPermissions = new ConcurrentHashMap<>();
 
-    public BridgeDispatcher(Plugin plugin, VillagerManager villagers,
+    public BridgeDispatcher(AgentIdePlugin plugin, VillagerManager villagers,
                             DisplayRenderer renderer, boolean showThoughts) {
         this.plugin = plugin;
         this.villagers = villagers;
@@ -71,6 +70,8 @@ public final class BridgeDispatcher {
         this.defaultProfile = welcome.defaultProfile() == null ? "" : welcome.defaultProfile();
         plugin.getLogger().info("Linker " + welcome.linkerVersion() + " ready with agents: "
                 + profiles.stream().map(BridgeMessage.AgentProfileInfo::id).toList());
+        // Reattach any villagers restored from a previous run now that the linker is available.
+        plugin.resumePendingSessions();
     }
 
     private void onSessionCreated(BridgeMessage.SessionCreated created) {
@@ -81,15 +82,19 @@ public final class BridgeDispatcher {
         AgentVillager agent = found.get();
         agent.setSessionId(created.sessionId());
         agent.setAgentName(created.agentName());
+        agent.setState(AgentVillager.State.READY);
+        agent.setNeedsResume(false);
         villagers.indexSession(agent);
+        plugin.persistAgentMeta(agent);
 
         villagers.entityOf(agent).ifPresent(v -> {
             renderer.ensureHologram(agent, v);
             renderer.setNamePlate(v, agent, "ready");
-            renderer.updateHologram(agent, "Ready. Talk to me!", NamedTextColor.GREEN);
+            renderer.refresh(agent);
         });
-        renderer.toConversers(agent, prefix(agent)
-                .append(Component.text("I'm ready — just type to chat with me.", NamedTextColor.GREEN)));
+        String verb = created.resumed() ? "Reconnected — I remember where we left off."
+                : "I'm ready — just type to chat with me.";
+        renderer.toConversers(agent, prefix(agent).append(Component.text(verb, NamedTextColor.GREEN)));
     }
 
     private void onMessage(BridgeMessage.Message msg) {
@@ -97,11 +102,15 @@ public final class BridgeDispatcher {
             switch (msg.role()) {
                 case "assistant" -> {
                     agent.appendTurn(msg.text());
-                    renderer.updateHologram(agent, agent.currentTurn(), NamedTextColor.WHITE);
+                    agent.setState(AgentVillager.State.WORKING);
+                    agent.setLastLine(agent.currentTurn());
+                    renderer.refresh(agent);
                 }
                 case "thought" -> {
                     if (showThoughts) {
-                        renderer.updateHologram(agent, msg.text(), NamedTextColor.GRAY);
+                        agent.setState(AgentVillager.State.THINKING);
+                        agent.setLastLine(msg.text());
+                        renderer.refresh(agent);
                     }
                 }
                 default -> { /* user echoes: ignore */ }
@@ -111,11 +120,19 @@ public final class BridgeDispatcher {
 
     private void onToolCall(BridgeMessage.ToolCall tool) {
         villagers.bySession(tool.sessionId()).ifPresent(agent -> {
-            String title = tool.title() != null ? tool.title() : tool.kind();
+            String label = firstNonBlank(tool.title(), tool.toolName(), tool.kind(), "tool");
             String status = tool.status() != null ? tool.status() : "";
+            agent.setState(AgentVillager.State.WORKING);
+            agent.setTool(label, tool.detail(), tool.status());
             villagers.entityOf(agent).ifPresent(v -> renderer.setNamePlate(v, agent, "⚙ " + status));
-            renderer.toConversers(agent, prefix(agent)
-                    .append(Component.text("⚙ " + title + " (" + status + ")", NamedTextColor.YELLOW)));
+            renderer.refresh(agent);
+
+            Component line = prefix(agent).append(Component.text("⚙ " + label, NamedTextColor.YELLOW));
+            if (tool.detail() != null && !tool.detail().equals(tool.title())) {
+                line = line.append(Component.text(" " + tool.detail(), NamedTextColor.GRAY));
+            }
+            line = line.append(Component.text(" (" + status + ")", NamedTextColor.YELLOW));
+            renderer.toConversers(agent, line);
         });
     }
 
@@ -124,6 +141,9 @@ public final class BridgeDispatcher {
             if (plan.entries() == null || plan.entries().isEmpty()) {
                 return;
             }
+            agent.setPlan(plan.entries());
+            renderer.refresh(agent);
+
             Component out = prefix(agent).append(Component.text("Plan:", NamedTextColor.GOLD));
             for (BridgeMessage.PlanItem item : plan.entries()) {
                 out = out.append(Component.newline())
@@ -154,11 +174,15 @@ public final class BridgeDispatcher {
     private void onTurnEnd(BridgeMessage.TurnEnd end) {
         villagers.bySession(end.sessionId()).ifPresent(agent -> {
             agent.setBusy(false);
+            agent.setState(AgentVillager.State.IDLE);
+            agent.setTool(null, null, null);
             if (agent.hasTurnContent()) {
                 String full = agent.takeTurn();
+                agent.setLastLine(full);
                 renderer.toConversers(agent, prefix(agent).append(Component.text(full, NamedTextColor.WHITE)));
             }
             villagers.entityOf(agent).ifPresent(v -> renderer.setNamePlate(v, agent, "idle"));
+            renderer.refresh(agent);
             if ("cancelled".equals(end.stopReason())) {
                 renderer.toConversers(agent, prefix(agent).append(
                         Component.text("(cancelled)", NamedTextColor.GRAY)));
@@ -173,10 +197,22 @@ public final class BridgeDispatcher {
         }
         villagers.bySession(error.sessionId()).ifPresent(agent -> {
             agent.setBusy(false);
+            agent.setState(AgentVillager.State.ERROR);
+            agent.setLastLine(error.message());
             villagers.entityOf(agent).ifPresent(v -> renderer.setNamePlate(v, agent, "error"));
+            renderer.refresh(agent);
             renderer.toConversers(agent, prefix(agent)
                     .append(Component.text("⚠ " + error.message(), NamedTextColor.RED)));
         });
+    }
+
+    private static String firstNonBlank(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return "";
     }
 
     private Component button(BridgeMessage.PermissionOptionDto option, String requestId) {

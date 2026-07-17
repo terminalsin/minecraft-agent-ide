@@ -33,7 +33,7 @@ class BridgeCodecTest {
 
     @Test
     void omitsNullFields() {
-        String json = codec.encode(new BridgeMessage.CreateSession("v1", null, null));
+        String json = codec.encode(new BridgeMessage.CreateSession("v1", null, null, null));
         assertTrue(json.contains("\"villagerId\":\"v1\""));
         assertTrue(!json.contains("agentProfile"), "null fields should be omitted");
     }

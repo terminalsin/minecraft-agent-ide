@@ -47,18 +47,27 @@ public sealed interface BridgeMessage {
     // ---- Session lifecycle -----------------------------------------------------------------
 
     /**
-     * C2L: bind a villager to a new agent session.
+     * C2L: bind a villager to an agent session.
      *
-     * @param villagerId   the plugin's id for the villager NPC (echoed back)
-     * @param agentProfile which configured agent to launch ({@code null} = linker default)
-     * @param cwd          workspace directory for the session ({@code null} = profile/linker default)
+     * @param villagerId      the plugin's id for the villager NPC (echoed back)
+     * @param agentProfile    which configured agent to launch ({@code null} = linker default)
+     * @param cwd             workspace directory for the session ({@code null} = profile/linker default)
+     * @param resumeSessionId a prior session id to resume via ACP {@code session/load}, or {@code null}
+     *                        to start fresh. Used after a plugin or linker restart to reconnect a
+     *                        villager to its previous conversation.
      */
-    record CreateSession(String villagerId, String agentProfile, String cwd) implements BridgeMessage {
+    record CreateSession(String villagerId, String agentProfile, String cwd, String resumeSessionId)
+            implements BridgeMessage {
     }
 
-    /** L2C: a session was established for the villager. */
-    record SessionCreated(String villagerId, String sessionId, String agentProfile, String agentName)
-            implements BridgeMessage {
+    /**
+     * L2C: a session was established for the villager.
+     *
+     * @param resumed {@code true} if this reattached a prior session (via {@code session/load}),
+     *                {@code false} for a brand-new session.
+     */
+    record SessionCreated(String villagerId, String sessionId, String agentProfile, String agentName,
+                          boolean resumed) implements BridgeMessage {
     }
 
     /** C2L: send a user turn to the agent. */
@@ -83,9 +92,21 @@ public sealed interface BridgeMessage {
     record Message(String sessionId, String role, String text) implements BridgeMessage {
     }
 
-    /** L2C: a tool call started or changed state. */
-    record ToolCall(String sessionId, String toolCallId, String title, String kind, String status)
-            implements BridgeMessage {
+    /**
+     * L2C: a tool call started or changed state.
+     *
+     * <p>The linker merges the ACP {@code tool_call} and later {@code tool_call_update} notifications
+     * (updates omit most fields), so {@code title}/{@code kind}/{@code toolName} stay populated across
+     * status changes.
+     *
+     * @param title    human-readable label (e.g. {@code Read /path}); may be null on the very first update
+     * @param kind     ACP category: {@code read}, {@code edit}, {@code execute}, {@code search}, …
+     * @param status   {@code pending}, {@code in_progress}, {@code completed}, {@code failed}
+     * @param toolName the concrete tool name from the agent (e.g. {@code Read}, {@code Bash}), if known
+     * @param detail   a one-line summary of the tool input (command, path, pattern), if available
+     */
+    record ToolCall(String sessionId, String toolCallId, String title, String kind, String status,
+                    String toolName, String detail) implements BridgeMessage {
     }
 
     /** L2C: the agent's current plan. */

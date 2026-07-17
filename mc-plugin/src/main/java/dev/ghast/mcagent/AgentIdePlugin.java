@@ -42,15 +42,29 @@ public final class AgentIdePlugin extends JavaPlugin {
         this.workspace = config.getString("agent.workspace", "");
         this.talkRadius = config.getDouble("agent.talk-radius", 6.0);
 
+        boolean showThoughts = config.getBoolean("display.show-thoughts", false);
         this.villagers = new VillagerManager(this, agentKey, hologramKey);
         this.conversations = new ConversationManager();
         this.renderer = new DisplayRenderer(this, hologramKey,
                 config.getBoolean("display.hologram", true),
                 config.getInt("display.hologram-max-chars", 300),
-                config.getDouble("display.hologram-height", 2.4));
-        this.dispatcher = new BridgeDispatcher(this, villagers, renderer,
-                config.getBoolean("display.show-thoughts", false));
+                config.getDouble("display.hologram-height", 2.4),
+                showThoughts);
+        this.dispatcher = new BridgeDispatcher(this, villagers, renderer, showThoughts);
 
+        // Restore villagers left by a previous run (so their sessions can be resumed), give each a
+        // fresh panel, then sweep any leftover orphan entities.
+        var restored = villagers.restoreFromWorld();
+        for (AgentVillager agent : restored) {
+            villagers.entityOf(agent).ifPresent(v -> {
+                renderer.ensureHologram(agent, v);
+                renderer.setNamePlate(v, agent, "offline");
+            });
+        }
+        if (!restored.isEmpty()) {
+            getLogger().info("Restored " + restored.size() + " agent villager(s) from a previous run; "
+                    + "will reconnect their sessions when the linker is available.");
+        }
         int swept = villagers.sweepOrphans();
         if (swept > 0) {
             getLogger().info("Removed " + swept + " leftover agent entities from a previous run.");
@@ -127,12 +141,13 @@ public final class AgentIdePlugin extends JavaPlugin {
         String profile = firstNonBlank(profileOverride, configuredProfile);
         Location location = VillagerManager.inFrontOf(player);
         AgentVillager agent = villagers.spawn(location, profile);
+        agent.setState(AgentVillager.State.STARTING);
         villagers.entityOf(agent).ifPresent(v -> renderer.setNamePlate(v, agent, "starting…"));
         villagers.entityOf(agent).ifPresent(v -> renderer.ensureHologram(agent, v));
 
         String cwd = workspace == null || workspace.isBlank() ? null : workspace;
         boolean sent = link.send(new BridgeMessage.CreateSession(
-                agent.villagerId(), blankToNull(profile), cwd));
+                agent.villagerId(), blankToNull(profile), cwd, null));
         if (!sent) {
             villagers.remove(agent);
             player.sendMessage(err("Could not reach the linker."));
@@ -174,6 +189,62 @@ public final class AgentIdePlugin extends JavaPlugin {
         }
         villagers.remove(agent);
         player.sendMessage(info("Removed the agent villager."));
+    }
+
+    /** Persists a villager's session binding to its entity so it survives a restart. */
+    public void persistAgentMeta(AgentVillager agent) {
+        villagers.persistMeta(agent);
+    }
+
+    /**
+     * Reattaches villagers restored from a previous run to their agent sessions. Called when the
+     * linker becomes available (on {@code Welcome}). Sends a resume-aware {@code CreateSession}; the
+     * linker uses {@code session/load} when the agent supports it, else starts fresh.
+     */
+    public void resumePendingSessions() {
+        if (!linkConnected()) {
+            return;
+        }
+        String cwd = workspace == null || workspace.isBlank() ? null : workspace;
+        int resumed = 0;
+        for (AgentVillager agent : villagers.all()) {
+            if (!agent.needsResume()) {
+                continue;
+            }
+            boolean sent = link.send(new BridgeMessage.CreateSession(
+                    agent.villagerId(), blankToNull(agent.profileId()), cwd, agent.sessionId()));
+            if (sent) {
+                // Cleared optimistically so a link blip doesn't spawn duplicate sessions; a failed
+                // resume can be retried with /agent debug resume.
+                agent.setNeedsResume(false);
+                agent.setState(AgentVillager.State.STARTING);
+                villagers.entityOf(agent).ifPresent(v -> renderer.setNamePlate(v, agent, "resuming…"));
+                resumed++;
+            }
+        }
+        if (resumed > 0) {
+            getLogger().info("Requested resume of " + resumed + " agent session(s).");
+        }
+    }
+
+    /** Requests a fresh session/resume for a single villager (used by /agent debug resume). */
+    public boolean resumeAgent(AgentVillager agent) {
+        if (!linkConnected()) {
+            return false;
+        }
+        String cwd = workspace == null || workspace.isBlank() ? null : workspace;
+        boolean sent = link.send(new BridgeMessage.CreateSession(
+                agent.villagerId(), blankToNull(agent.profileId()), cwd, agent.sessionId()));
+        if (sent) {
+            agent.setNeedsResume(false);
+            agent.setState(AgentVillager.State.STARTING);
+            villagers.entityOf(agent).ifPresent(v -> renderer.setNamePlate(v, agent, "resuming…"));
+        }
+        return sent;
+    }
+
+    public DisplayRenderer renderer() {
+        return renderer;
     }
 
     public void answerPermission(Player player, String requestId, String optionId) {

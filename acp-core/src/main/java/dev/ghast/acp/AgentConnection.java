@@ -32,9 +32,13 @@ public final class AgentConnection implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(AgentConnection.class);
 
+    /** How many trailing stderr lines to keep for post-mortem diagnostics. */
+    private static final int MAX_STDERR_LINES = 200;
+
     private final Process process;
     private final JsonRpcPeer peer;
     private final ClientSideHandler handler;
+    private final java.util.Deque<String> recentStderr = new java.util.concurrent.ConcurrentLinkedDeque<>();
 
     private AgentConnection(Process process, JsonRpcPeer peer, ClientSideHandler handler) {
         this.process = process;
@@ -55,7 +59,16 @@ public final class AgentConnection implements AutoCloseable {
             builder.directory(workingDir);
         }
         if (environment != null) {
-            builder.environment().putAll(environment);
+            // A null value means "remove this variable from the child environment" — used to strip
+            // inherited guards (e.g. CLAUDECODE) that would otherwise make the agent refuse to launch.
+            Map<String, String> childEnv = builder.environment();
+            for (Map.Entry<String, String> entry : environment.entrySet()) {
+                if (entry.getValue() == null) {
+                    childEnv.remove(entry.getKey());
+                } else {
+                    childEnv.put(entry.getKey(), entry.getValue());
+                }
+            }
         }
         Process process = builder.start();
         log.info("Spawned ACP agent: {} (pid {})", String.join(" ", command), process.pid());
@@ -104,12 +117,16 @@ public final class AgentConnection implements AutoCloseable {
     }
 
     private void drainStderr() {
+        long pid = process.pid();
         Thread t = new Thread(() -> {
             try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getErrorStream(), StandardCharsets.UTF_8))) {
                 String line;
                 while ((line = reader.readLine()) != null) {
-                    log.debug("[agent stderr] {}", line);
+                    recordStderr(line);
+                    // Visible by default: the agent's own diagnostics are usually the only clue to
+                    // why initialize/authenticate/session-new failed.
+                    log.info("[agent pid {} stderr] {}", pid, line);
                 }
             } catch (IOException ignored) {
                 // process ended
@@ -117,6 +134,33 @@ public final class AgentConnection implements AutoCloseable {
         }, "acp-agent-stderr");
         t.setDaemon(true);
         t.start();
+    }
+
+    private void recordStderr(String line) {
+        recentStderr.addLast(line);
+        while (recentStderr.size() > MAX_STDERR_LINES) {
+            recentStderr.pollFirst();
+        }
+    }
+
+    /** A snapshot of the most recent agent stderr lines (oldest first), for failure diagnostics. */
+    public List<String> recentStderr() {
+        return new ArrayList<>(recentStderr);
+    }
+
+    /** The recent agent stderr joined into a single string, or {@code ""} if none was captured. */
+    public String recentStderrText() {
+        return String.join(System.lineSeparator(), recentStderr);
+    }
+
+    /** The agent process id, useful for correlating with {@code [agent pid N stderr]} log lines. */
+    public long pid() {
+        return process.pid();
+    }
+
+    /** The agent process exit code if it has terminated, otherwise {@code null}. */
+    public Integer exitCode() {
+        return process.isAlive() ? null : process.exitValue();
     }
 
     /** Performs the {@code initialize} handshake, advertising filesystem client capabilities. */
@@ -141,6 +185,21 @@ public final class AgentConnection implements AutoCloseable {
         params.set("mcpServers", Json.MAPPER.createArrayNode());
         return peer.request(AcpConstants.METHOD_SESSION_NEW, params)
                 .thenApply(result -> Json.text(result, "sessionId"));
+    }
+
+    /**
+     * Resumes a previously-created session via {@code session/load}. The agent replays the session's
+     * history as {@code session/update} notifications, then completes. Only valid when the agent
+     * advertised the {@code loadSession} capability at {@code initialize}. Completes with the same
+     * {@code sessionId} that was passed in.
+     */
+    public CompletableFuture<String> loadSession(String sessionId, String cwd) {
+        ObjectNode params = Json.object();
+        params.put("sessionId", sessionId);
+        params.put("cwd", cwd);
+        params.set("mcpServers", Json.MAPPER.createArrayNode());
+        return peer.request(AcpConstants.METHOD_SESSION_LOAD, params)
+                .thenApply(result -> sessionId);
     }
 
     /** Sends a plain-text prompt to the session. Completes with the turn's {@code stopReason}. */

@@ -15,6 +15,7 @@ commands:
       /agent list             - list active agent villagers
       /agent remove           - remove the nearest agent villager
       /agent status           - show linker connection status
+      /agent debug <action>   - diagnostics: list/here/move/remove/removeall/rehologram/resume/sweep/info
     permission: mcagent.use
 permissions:
   mcagent.use:

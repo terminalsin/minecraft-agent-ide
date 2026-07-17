@@ -15,8 +15,11 @@ build/
 Thumbs.db
 
 # Local config with secrets / machine paths
-config/linker.json
+config/
 *.local.json
+# Linker runtime state (persisted sessions) and the agent's working directory
+sessions.json
+claudework/
 
 # Logs
 *.log
@@ -24,3 +27,6 @@ config/linker.json
 # Java
 *.class
 hs_err_pid*
+
+# Local Paper dev server
+.workspace/
