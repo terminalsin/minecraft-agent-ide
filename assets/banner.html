@@ -1,0 +1,113 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1280px; height: 448px; overflow: hidden; }
+  body {
+    font-family: 'Trebuchet MS', 'Segoe UI', system-ui, sans-serif;
+    position: relative;
+    background: linear-gradient(180deg, #6cc0f5 0%, #9fd8fb 55%, #c7ecff 100%);
+  }
+  /* soft sun glow */
+  .sun { position:absolute; top:-90px; right:-60px; width:320px; height:320px; border-radius:50%;
+         background: radial-gradient(circle, rgba(255,247,214,.9), rgba(255,247,214,0) 65%); }
+  /* blocky clouds */
+  .cloud { position:absolute; background:#ffffff; opacity:.9; border-radius:6px;
+           box-shadow: 26px 0 #fff, 52px 0 #fff, 26px -20px #eef7ff; }
+  .c1 { top:52px; left:120px; width:26px; height:20px; }
+  .c2 { top:96px; left:520px; width:26px; height:20px; transform:scale(.8); }
+  .c3 { top:40px; left:840px; width:26px; height:20px; transform:scale(1.15); }
+
+  /* ground */
+  .ground { position:absolute; left:0; right:0; bottom:0; height:96px; background:#7a4a30; }
+  .grass  { position:absolute; left:0; right:0; bottom:78px; height:22px; background:#66ab3e;
+            box-shadow: inset 0 4px 0 rgba(255,255,255,.18); }
+  .grass::after { content:""; position:absolute; left:0; right:0; top:-6px; height:6px;
+            background: repeating-linear-gradient(90deg,#66ab3e 0 16px,#5b9b37 16px 32px); }
+  .dirt::after { content:""; position:absolute; left:0; right:0; bottom:0; height:96px;
+            background: repeating-linear-gradient(90deg, rgba(0,0,0,.05) 0 32px, rgba(0,0,0,0) 32px 64px); }
+
+  /* villager */
+  .villager { position:absolute; left:96px; bottom:70px; width:150px; height:230px; }
+  .robe { position:absolute; bottom:0; left:20px; width:110px; height:150px;
+          background:#6f4a34; border-radius:8px 8px 4px 4px;
+          box-shadow: inset -10px 0 0 rgba(0,0,0,.12), inset 10px 0 0 rgba(255,255,255,.06); }
+  .robe::before { content:""; position:absolute; top:14px; left:50%; transform:translateX(-50%);
+          width:14px; height:120px; background:#5a3b2a; } /* arms fold seam */
+  .head { position:absolute; top:0; left:33px; width:84px; height:86px; background:#caa07a;
+          border-radius:6px; box-shadow: inset -8px 0 0 rgba(0,0,0,.10); }
+  .unibrow { position:absolute; top:26px; left:14px; width:56px; height:9px; background:#5b3b2a; border-radius:2px; }
+  .eye { position:absolute; top:38px; width:10px; height:12px; background:#fff; border:2px solid #3a2a1e; }
+  .eye.l { left:16px; } .eye.r { right:16px; }
+  .eye::after { content:""; position:absolute; inset:2px 1px; background:#2e7d5b; }
+  .nose { position:absolute; top:40px; left:50%; transform:translateX(-50%); width:20px; height:34px;
+          background:#b98863; border-radius:4px; box-shadow: inset -4px 0 0 rgba(0,0,0,.12); }
+
+  /* floating code panel + link */
+  .link { position:absolute; left:196px; bottom:250px; width:70px; height:60px;
+          border-left:3px dashed rgba(38,190,180,.9); border-top:3px dashed rgba(38,190,180,.9);
+          border-radius:14px 0 0 0; }
+  .panel { position:absolute; left:236px; bottom:250px; width:300px; height:150px;
+           background:#1b2531; border-radius:14px; padding:16px 18px;
+           box-shadow: 0 14px 34px rgba(12,26,45,.35), 0 0 0 3px rgba(38,190,180,.25);
+           filter: drop-shadow(0 0 10px rgba(38,190,180,.25)); }
+  .panel .dot { display:inline-block; width:9px; height:9px; border-radius:50%; margin-right:6px; }
+  .bar { height:11px; border-radius:5px; margin:9px 0; }
+  .ln { font: 600 13px ui-monospace, Menlo, monospace; margin:7px 0; }
+  .ai { position:absolute; top:-14px; right:-14px; background:#26beb4; color:#04312d;
+        font: 800 12px 'Trebuchet MS',sans-serif; padding:6px 11px; border-radius:20px;
+        box-shadow:0 6px 16px rgba(38,190,180,.5); }
+
+  /* copy block */
+  .copy { position:absolute; right:70px; top:118px; width:560px; text-align:left; }
+  .pill { display:inline-block; background:rgba(12,32,58,.10); color:#0e2a4a; font-weight:700;
+          letter-spacing:.14em; font-size:12px; padding:7px 13px; border-radius:20px; }
+  h1 { color:#0f2440; font-size:64px; line-height:1.02; margin:16px 0 10px; letter-spacing:-.5px;
+       text-shadow: 0 2px 0 rgba(255,255,255,.35); }
+  h1 .hl { color:#1e7f74; }
+  p.tag { color:#183a5c; font-size:21px; line-height:1.35; font-weight:600; max-width:520px; }
+  .chips { margin-top:18px; }
+  .chip { display:inline-block; background:#ffffff; color:#123; font-weight:700; font-size:13px;
+          padding:8px 13px; border-radius:9px; margin:0 8px 8px 0; box-shadow:0 4px 12px rgba(12,26,45,.12); }
+</style>
+</head>
+<body>
+  <div class="sun"></div>
+  <div class="cloud c1"></div><div class="cloud c2"></div><div class="cloud c3"></div>
+
+  <div class="ground dirt"></div>
+  <div class="grass"></div>
+
+  <div class="link"></div>
+  <div class="panel">
+    <div><span class="dot" style="background:#ff5f57"></span><span class="dot" style="background:#febc2e"></span><span class="dot" style="background:#28c840"></span></div>
+    <div class="ln" style="color:#7ee0d4">$ build the thing</div>
+    <div class="bar" style="width:78%; background:#3f5063"></div>
+    <div class="bar" style="width:56%; background:#3f5063"></div>
+    <div class="ln" style="color:#ffd479">✓ done</div>
+    <div class="ai">✦ AI agent</div>
+  </div>
+
+  <div class="villager">
+    <div class="robe"></div>
+    <div class="head">
+      <div class="unibrow"></div>
+      <div class="eye l"></div><div class="eye r"></div>
+      <div class="nose"></div>
+    </div>
+  </div>
+
+  <div class="copy">
+    <span class="pill">MINECRAFT&nbsp;·&nbsp;AI&nbsp;CODING&nbsp;AGENTS</span>
+    <h1>Minecraft<br>Agent <span class="hl">IDE</span></h1>
+    <p class="tag">Right-click a villager, type in chat, and a real AI coding agent does the work — live, in your world.</p>
+    <div class="chips">
+      <span class="chip">🗨️ Chat to code</span>
+      <span class="chip">🤖 Claude &amp; Codex</span>
+      <span class="chip">✨ Zero setup jargon</span>
+    </div>
+  </div>
+</body>
+</html>

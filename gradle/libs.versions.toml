@@ -1,0 +1,20 @@
+[versions]
+jackson = "2.18.2"
+javaWebsocket = "1.6.0"
+slf4j = "2.0.16"
+paper = "1.21.4-R0.1-SNAPSHOT"
+shadow = "8.3.5"
+junit = "5.11.3"
+
+[libraries]
+jackson-databind = { module = "com.fasterxml.jackson.core:jackson-databind", version.ref = "jackson" }
+jackson-annotations = { module = "com.fasterxml.jackson.core:jackson-annotations", version.ref = "jackson" }
+java-websocket = { module = "org.java-websocket:Java-WebSocket", version.ref = "javaWebsocket" }
+slf4j-api = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
+slf4j-simple = { module = "org.slf4j:slf4j-simple", version.ref = "slf4j" }
+paper-api = { module = "io.papermc.paper:paper-api", version.ref = "paper" }
+junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit" }
+junit-launcher = { module = "org.junit.platform:junit-platform-launcher", version = "1.11.3" }
+
+[plugins]
+shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }

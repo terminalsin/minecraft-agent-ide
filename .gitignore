@@ -1,0 +1,32 @@
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+*.ipr
+*.iws
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local config with secrets / machine paths
+config/
+*.local.json
+# Linker runtime state (persisted sessions) and the agent's working directory
+sessions.json
+claudework/
+
+# Logs
+*.log
+
+# Java
+*.class
+hs_err_pid*
+
+# Local Paper dev server
+.workspace/
